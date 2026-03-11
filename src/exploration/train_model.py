@@ -11,7 +11,7 @@ from xgboost import XGBRegressor
 
 def load_data():
     print("Loading dataset...")
-    return pd.read_csv("data/engineered_train.csv")
+    return pd.read_csv("data/processed/engineered_train.csv")
 
 
 def split_data(df):
