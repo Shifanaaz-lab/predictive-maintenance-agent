@@ -1,104 +1,107 @@
-# src/train_model.py
+"""
+Train an XGBoost RUL model that is 100% compatible with the real‑time
+simulator in `real_time_engine_telemetry.py`.
 
-import pandas as pd
-import joblib
+This script:
+  - Uses the same `EngineState` and `FeatureEngineer` classes as the live simulator
+  - Simulates many engines and cycles offline
+  - Defines RUL labels as (design_life - cycle)
+  - Trains an XGBRegressor on those features
+  - Saves the model as `xgb_rul_model.json` with feature names embedded
+
+After running this once, point the simulator at the new model:
+
+  $env:XGB_MODEL_PATH = "E:\\ROBOTICS\\syn-dataset\\xgb_rul_model.json"
+
+and (optionally) clear EXPECTED_FEATURES so it uses the model's own feature names:
+
+  Remove-Item Env:EXPECTED_FEATURES
+"""
+
+import os
+from typing import Tuple
+
 import numpy as np
-
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-
+import pandas as pd
 from xgboost import XGBRegressor
 
-
-print("Loading dataset...")
-
-df = pd.read_csv("data/engineered_train.csv")
-
-
-# Engine split
-engine_ids = df["engine_id"].unique()
-
-np.random.seed(42)
-np.random.shuffle(engine_ids)
-
-train_ids = engine_ids[:80]
-test_ids = engine_ids[80:]
-
-train_df = df[df["engine_id"].isin(train_ids)]
-test_df = df[df["engine_id"].isin(test_ids)]
-
-
-X_train = train_df.drop(columns=["engine_id", "cycle", "RUL"])
-y_train = train_df["RUL"]
-
-X_test = test_df.drop(columns=["engine_id", "cycle", "RUL"])
-y_test = test_df["RUL"]
-
-
-print("Training samples:", X_train.shape)
-
-
-model = XGBRegressor(
-
-    n_estimators=3000,
-
-    learning_rate=0.005,
-
-    max_depth=8,
-
-    min_child_weight=3,
-
-    subsample=0.9,
-    colsample_bytree=0.9,
-
-    gamma=0.01,
-
-    reg_alpha=0.1,
-    reg_lambda=1.5,
-
-    objective="reg:squarederror",
-
-    random_state=42,
-    n_jobs=-1
+from real_time_engine_telemetry import (
+    EngineState,
+    FeatureEngineer,
+    ROLLING_WINDOW,
 )
 
 
-model.fit(
-
-    X_train,
-    y_train,
-
-    eval_set=[(X_test, y_test)],
-    early_stopping_rounds=200,
-    verbose=100
-)
+NUM_TRAIN_ENGINES = 200
+RUL_HORIZON_MULTIPLIER = 1.2  # simulate beyond nominal design life
 
 
-pred = model.predict(X_test)
+def generate_training_data(
+    num_engines: int = NUM_TRAIN_ENGINES,
+    random_state: int = 0,
+) -> Tuple[pd.DataFrame, np.ndarray]:
+    rng = np.random.default_rng(random_state)
+    fe = FeatureEngineer()
+
+    rows = []
+    labels = []
+
+    for engine_id in range(1, num_engines + 1):
+        eng = EngineState(engine_id=engine_id)
+        eng.initialize_random(rng)
+
+        # Warm‑up history to be consistent with the live simulator
+        for _ in range(ROLLING_WINDOW):
+            _, sensors, op_settings = eng.next_reading(rng)
+
+        max_cycles = int(eng.design_life * RUL_HORIZON_MULTIPLIER)
+
+        for _ in range(max_cycles):
+            cycle, sensors, op_settings = eng.next_reading(rng)
+            feat = fe.build_feature_row(eng, cycle, sensors, op_settings)
+
+            # Remaining useful life label (clipped at 0)
+            rul = max(eng.design_life - cycle, 0)
+
+            rows.append(feat)
+            labels.append(rul)
+
+    X = pd.DataFrame(rows)
+    y = np.asarray(labels, dtype=float)
+    return X, y
 
 
-print("\nPERFORMANCE")
+def train_and_save_model(
+    output_path: str = "xgb_rul_model.json",
+) -> None:
+    print("Generating synthetic training data...")
+    X, y = generate_training_data()
 
-print("MAE:", mean_absolute_error(y_test, pred))
-print("RMSE:", mean_squared_error(y_test, pred) ** 0.5)
-print("R²:", r2_score(y_test, pred))
+    print(f"Training data: {X.shape[0]:,} rows, {X.shape[1]} features")
+
+    # Basic XGBoost regression model for RUL
+    model = XGBRegressor(
+        n_estimators=300,
+        max_depth=5,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        objective="reg:squarederror",
+        tree_method="hist",
+    )
+
+    print("Training XGBoost model...")
+    model.fit(X, y)
+
+    # Save native XGBoost model with feature names embedded
+    model.save_model(output_path)
+    abs_path = os.path.abspath(output_path)
+    print(f"Saved trained model to {abs_path}")
+
+    print("\nFeature order used during training (for reference):")
+    print(",".join(X.columns))
 
 
-joblib.dump(model, "models/model.pkl")
+if __name__ == "__main__":
+    train_and_save_model()
 
-print("Model saved.")
-
-import matplotlib.pyplot as plt
-import numpy as np
-
-feature_importance = model.feature_importances_
-feature_names = X_train.columns
-
-indices = np.argsort(feature_importance)[-20:]
-
-plt.figure(figsize=(10, 8))
-plt.barh(range(len(indices)), feature_importance[indices])
-plt.yticks(range(len(indices)), [feature_names[i] for i in indices])
-plt.title("Top 20 Important Features")
-plt.tight_layout()
-plt.savefig("models/feature_importance.png")
-plt.close()

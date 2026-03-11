@@ -1,14 +1,49 @@
-# Python cache
+# ===============================
+# Python Cache
+# ===============================
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
-# Virtual environments
+# ===============================
+# Virtual Environments
+# ===============================
 .venv/
 venv/
+env/
 
-# Environment variables
+# ===============================
+# Environment Variables
+# ===============================
 .env
 
-# Generated data files
+# ===============================
+# Generated Data Files
+# ===============================
 data/engineered_*.csv
 data/results.csv
+
+# ===============================
+# Model Artifacts (Do NOT Track)
+# ===============================
+models/*.pkl
+models/*.png
+models/*.json
+
+# ===============================
+# Jupyter Notebook Checkpoints
+# ===============================
+.ipynb_checkpoints/
+
+# ===============================
+# IDE / Editor Settings
+# ===============================
+.vscode/
+.idea/
+
+# ===============================
+# OS Files
+# ===============================
+.DS_Store
+Thumbs.db
