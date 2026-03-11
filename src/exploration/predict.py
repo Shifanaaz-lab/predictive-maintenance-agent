@@ -1,3 +1,8 @@
+"""
+Prediction pipeline for Remaining Useful Life (RUL).
+Loads trained model and generates predictions from engine telemetry.
+"""
+
 import pandas as pd
 import joblib
 
