@@ -1,3 +1,9 @@
+"""
+Model evaluation module for RUL prediction.
+
+Computes MAE, RMSE, and R² metrics.
+"""
+
 import pandas as pd
 import joblib
 

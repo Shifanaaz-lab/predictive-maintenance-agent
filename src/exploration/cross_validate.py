@@ -1,5 +1,9 @@
 # src/cross_validate.py
+"""
+Cross-validation module for RUL model.
 
+Evaluates model robustness across different engine splits.
+"""
 import pandas as pd
 import numpy as np
 import joblib
@@ -73,3 +77,6 @@ for fold in range(k):
 
 print("\nAverage R² across folds:", round(np.mean(results), 4))
 print("Std deviation:", round(np.std(results), 4))
+
+if __name__ == "__main__":
+    print("Running evaluation module...")
